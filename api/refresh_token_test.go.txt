@@ -1,0 +1,143 @@
+package facades
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/cidekar/adele-framework"
+	"github.com/cidekar/adele-framework/facades/auth"
+	"github.com/gobuffalo/pop"
+)
+
+func TestOauth_RefreshToken(t *testing.T) {
+	o := Oauth{}
+
+	defer tearDownRefreshTest(ade)
+	setupRefreshTokenTest(t, o)
+
+	rt, err := o.GenerateRefreshToken(1, 1, 1)
+	if err != nil {
+		t.Error("generate refresh token returned an error when it should not")
+	}
+
+	if rt == &(RefreshToken{}) {
+		t.Error("generate refresh token returned an empty struct when it should not")
+	}
+
+	err = o.InsertRefreshToken(rt)
+	if err != nil {
+		t.Error("insert refresh token returned an error when it should not")
+	}
+
+	err = o.DeleteRefreshTokenByToken(rt.PlainText)
+	if err != nil {
+		t.Error("get oauth token returned an error when it should not")
+	}
+}
+
+func setupRefreshTokenTest(t *testing.T, o Oauth) {
+
+	err := os.RemoveAll(ade.RootPath + "/migrations")
+	if err != nil {
+		panic(err)
+	}
+
+	upBytes, err := templateFS.ReadFile("testmigrations/oauth_test_postgres.sql")
+	if err != nil {
+		panic(err)
+	}
+
+	err = ade.CreatePopMigration(upBytes, []byte(""), "oauth", "sql")
+	if err != nil {
+		panic(err)
+	}
+
+	err = pop.AddLookupPaths(ade.RootPath)
+	if err != nil {
+		panic(err)
+	}
+
+	txz, err := ade.PopConnect()
+	if err != nil {
+		panic(err)
+	}
+
+	err = ade.RunPopMigrations(txz)
+	if err != nil {
+		panic(err)
+	}
+
+	// Seed User
+	passHash, err := auth.HashPassword("Password")
+	if err != nil {
+		panic(err)
+	}
+	collection := upper.Collection("users")
+	_, err = collection.Insert(User{
+		Email:     "adele@localhost.net",
+		FirstName: "Adele",
+		LastName:  "Wiring Code",
+		Password:  string(*passHash),
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	// Seed client
+	ClientCredentialsGrant = Client{
+		Secret: generateClientSecret(),
+		Name:   "Adele",
+		Type:   "client_credentials",
+	}
+
+	collection = upper.Collection("oauth_clients")
+	res, err := collection.Insert(ClientCredentialsGrant)
+	if err != nil {
+		panic(err)
+	}
+
+	id, err := strconv.Atoi(fmt.Sprintf("%d", res.ID()))
+	if err != nil {
+		panic(err)
+	}
+
+	ClientCredentialsGrant.ID = id
+
+	// Seed token
+	ot, err := o.GenerateOauthToken()
+	ot.ClientID = ClientCredentialsGrant.ID
+	ot.Expires = time.Now().UTC().Add(24 * time.Hour)
+	if err != nil {
+		panic(err)
+	}
+	collection = upper.Collection("tokens")
+	_, err = collection.Insert(ot)
+	if err != nil {
+		panic(err)
+	}
+
+	OauthTkn = *ot
+
+}
+
+func tearDownRefreshTest(ade adele.Adele) {
+
+	tx, err := ade.PopConnect()
+	if err != nil {
+		panic(err)
+	}
+
+	err = tx.RawQuery("DROP TABLE IF EXISTS schema_migration, users, oauth_clients, tokens, refresh_tokens, authorization_tokens CASCADE;").Exec()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	err = os.RemoveAll(ade.RootPath + "/migrations")
+	if err != nil {
+		panic(err)
+	}
+
+}

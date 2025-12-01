@@ -1,0 +1,14 @@
+Scopes:
+  ping: "Allows access to the ping resource"
+  pong: "Allows access to the pong resource"
+
+UnguardedRoutes:
+  - "/api/health"
+  - "/api/oauth/token"
+
+GuardedRouteGroups:
+  - "/api"
+
+AuthorizationTokenTTL: 60
+OauthTokenTTL: 24
+RefreshTokenTokenTTL: 24

@@ -1,0 +1,47 @@
+{{ extends "./layouts/base.jet"}}
+
+{{block browserTitle()}}
+    Login
+{{end}}
+
+
+{{block css()}}
+
+{{end}}
+
+{{block pageContent()}}
+
+
+<h2 class="mt-5 text-center">{{client}}</h2>
+<h3>Would like to access:</h3>
+<ul>
+    {{range scopes}}
+        <li>{{.}}</li>
+    {{end}}
+
+</ul>
+
+<hr>
+
+<form method="post"
+    action="{{url}}"
+    novalidate=""
+    onkeydown="return event.key != 'Enter';">
+
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+    <label for="allow_access">Allow Access</label>
+    <input type="checkbox" name="allow_access" value="permission given">
+    <br>
+
+    <input class="button" type="submit" value="Submit"/>
+    <br>
+    <a href="/">Cancel</a>
+
+</form>
+
+{{ block js()}}
+
+{{end}}
+
+{{end}}

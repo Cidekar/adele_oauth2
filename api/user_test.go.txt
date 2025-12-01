@@ -1,0 +1,109 @@
+package facades
+
+import (
+	"fmt"
+	"os"
+	"testing"
+
+	"github.com/cidekar/adele-framework"
+	auth "github.com/cidekar/adele-framework/facades/auth"
+	"github.com/gobuffalo/pop"
+)
+
+func TestOauth_User(t *testing.T) {
+	defer tearDownUserTest(ade)
+	setupUserTest(t)
+
+	o := Oauth{}
+	u, err := o.GetUserByEmail("adele@localhost.net")
+	if err != nil {
+		t.Error("get user by email returned a error when it should not")
+	}
+
+	ui := &User{}
+	if u == ui {
+		t.Error("get user by email did not return a user")
+	}
+
+	match := o.CheckUserPasswordMatches("Password", *u)
+	if match == false {
+		t.Error("check user password matches returned false when it should not")
+	}
+
+}
+
+func setupUserTest(t *testing.T) {
+
+	// flush migrations
+	err := os.RemoveAll(ade.RootPath + "/migrations")
+	if err != nil {
+		panic(err)
+	}
+
+	upBytes, err := templateFS.ReadFile("testmigrations/user_table.postgres.sql")
+	if err != nil {
+		panic(err)
+	}
+
+	downBytes := []byte("drop table if exists users cascade;")
+	if err != nil {
+		panic(err)
+	}
+
+	err = ade.CreatePopMigration(upBytes, downBytes, "user", "sql")
+	if err != nil {
+		panic(err)
+	}
+
+	err = pop.AddLookupPaths(ade.RootPath)
+	if err != nil {
+		panic(err)
+	}
+
+	tx, err := ade.PopConnect()
+	if err != nil {
+		panic(err)
+	}
+
+	err = ade.RunPopMigrations(tx)
+	if err != nil {
+		panic(err)
+	}
+
+	// seed user
+	passHash, err := auth.HashPassword("Password")
+	if err != nil {
+		panic(err)
+	}
+	collection := upper.Collection("users")
+	_, err = collection.Insert(User{
+		Email:     "adele@localhost.net",
+		FirstName: "Adele",
+		LastName:  "Wiring Code",
+		Password:  string(*passHash),
+	})
+	if err != nil {
+		panic(err)
+	}
+
+}
+
+func tearDownUserTest(ade adele.Adele) {
+
+	tx, err := ade.PopConnect()
+	if err != nil {
+		panic(err)
+	}
+
+	err = tx.RawQuery("DROP TABLE IF EXISTS schema_migration, users CASCADE;").Exec()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// flush migrations
+	err = os.RemoveAll(ade.RootPath + "/migrations")
+	if err != nil {
+		panic(err)
+	}
+
+}

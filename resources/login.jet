@@ -1,0 +1,61 @@
+{{ extends "./layouts/base.jet"}}
+
+{{block browserTitle()}}
+    Login
+{{end}}
+
+
+{{block css()}}
+
+{{end}}
+
+{{block pageContent()}}
+
+
+<h2 class="mt-5 text-center">Login</h2>
+
+<hr>
+
+{{if isset(validatorBag)}}
+    <span class="validator-message">{{ validatorBag }}</span>
+{{end}}
+
+<form method="post"
+    action="{{url}}"
+    novalidate=""
+    onkeydown="return event.key != 'Enter';">
+
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+    <div class="mb-3">
+        <label for="email" class="form-label">Username</label>
+        <input type="email" class="form-control" id="username" name="username"
+            required="" autocomplete="email-new">
+    </div>
+
+    <div class="mb-3">
+        <label for="password" class="form-label">Password</label>
+        <input type="password" class="form-control" id="password" name="password"
+            required="" autocomplete="password-new">
+    </div>
+
+    <hr>
+
+    <div class="form-check for-switch">
+        <input class="form-check-input" type="checkbox" value="remember" name="remember" id="remember">
+        <label class="form-check-label" for="remember">Remember me</label>
+    </div>
+
+    <br>
+
+     <input class="button" type="submit" value="login"/>
+
+</form>
+
+{{dump()}}
+
+{{ block js()}}
+
+{{end}}
+
+{{end}}

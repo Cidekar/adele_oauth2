@@ -1,0 +1,199 @@
+package cmd
+
+import (
+	"errors"
+	"fmt"
+	"$APPNAME$/data"
+	"net/url"
+	"strconv"
+	"strings"
+
+	"github.com/cidekar/adele-framework"
+	"github.com/cidekar/adele-framework/cmd"
+	"github.com/cidekar/adele-framework/facades/cli"
+	"github.com/fatih/color"
+)
+
+var supportedGrantTypes = []string{
+	"authorization_grant",
+	"authorization_grant_pkce",
+	"authorization_grant_pkce_implicit",
+	"client_credentials",
+	"resource_owner_password_credentials",
+}
+
+var MakeClientCommand = &adele.Command{
+	Name:        "oauth client",
+	Help:        "create a new oauth client",
+	Description: "create a new oauth client for your adele application",
+	Usage:       "oauth client <name>",
+	Options: map[string]string{
+		"-l, --list":     "list all oauth client types that can be used to make a new client",
+		"-r, --redirect": "the redirect url used by the client",
+		"-t, --type":     "oauth client type to create i.e., client or resource owner",
+		"-u, --user":     "assign the oauth client to a user of your application",
+	},
+}
+
+var (
+	ErrDatabaseConfiguration = errors.New("invalid database connection")
+	ErrInvalidClientName     = errors.New("invalid client name")
+	ErrInvalidGrantType      = errors.New("invalid grant type")
+	ErrMissingGrantType      = errors.New("missing grant type")
+	ErrInvalidRedirect       = errors.New("invalid redirect url")
+	ErrUserNotFound          = errors.New("user not found")
+)
+
+var Descriptions = map[error]string{
+	ErrInvalidClientName:     "A name was not name provided for the oauth client, a name must be provided to create a new oauth client.",
+	ErrInvalidGrantType:      "The grant type provided is not supported, please provide a valid grant type. The grant types are supported by the authorization server are viewable by pass the -l or --list option.",
+	ErrMissingGrantType:      "the grant type was not provided, please provide a valid grant type when creating a client. The grant types are supported by the authorization server are viewable by pass the -l or --list option.",
+	ErrDatabaseConfiguration: "The database connection provided in the environment configuration is invalid, please provide a valid database connection.",
+	ErrInvalidRedirect:       "The redirect url, scheme, or host is not supported by the authorization server. Please provide a valid url to use when redirecting the user-agent back to the authorization client.",
+	ErrUserNotFound:          "The user provided is not a valid user of the application, please provide a valid user ID. The user must exist in the database before attempting to preform this action.",
+}
+
+func NewErrorMessage(err error) string {
+	color.Red(fmt.Sprintf("Error: %s\n%s", err.Error(), Descriptions[err]))
+	return ""
+}
+
+func (c *Commands) OauthClient(arg1, arg2, arg3 string, options []string) string {
+	longOption := cli.HasOption("list", options)
+	shortOption := cli.HasOption("l", options)
+
+	if longOption || shortOption {
+		color.White("The authorization server supports the following grant types: ")
+		for _, t := range supportedGrantTypes {
+			color.White("- %s", t)
+		}
+		color.White("\nPlease select from the list of grant types to create a new oauth client. You may use the -t or --type flag to specify a grant type: \n --type=<grant to specify a grant type>\n --t=<grant to specify a grant type>.")
+		return ""
+	}
+
+	if arg2 != "client" {
+		cmd.GetHelp(arg1)
+		return ""
+	}
+
+	if arg3 == "" {
+		return NewErrorMessage(ErrInvalidClientName)
+	}
+
+	dbType := c.App.DB.DataType
+
+	if dbType == "" {
+		return NewErrorMessage(ErrDatabaseConfiguration)
+	}
+
+	var client = data.Client{
+		Name: arg3,
+	}
+
+	// Client Type
+	longOption = cli.HasOption("type", options)
+	shortOption = cli.HasOption("t", options)
+
+	if longOption || shortOption {
+
+		clientType := cli.GetOption("type", options)
+		if clientType == "" {
+			clientType = cli.GetOption("t", options)
+		}
+
+		isSupportedGrant := false
+		for _, grantType := range supportedGrantTypes {
+			if clientType == grantType {
+				isSupportedGrant = true
+				break
+			}
+		}
+
+		if !isSupportedGrant {
+			return NewErrorMessage(ErrInvalidGrantType)
+		}
+
+		client.Type = clientType
+	} else {
+		return NewErrorMessage(ErrMissingGrantType)
+	}
+
+	// Authorization Grant [any]
+	if strings.Contains(client.Type, "authorization_grant") {
+		// redirect url
+		var redirect string
+		longOption = cli.HasOption("redirect", options)
+		shortOption = cli.HasOption("r", options)
+
+		if longOption || shortOption {
+
+			redirect = cli.GetOption("redirect", options)
+			if redirect == "" {
+				redirect = cli.GetOption("r", options)
+			}
+		}
+		if redirect == "" {
+			return NewErrorMessage(ErrInvalidRedirect)
+		}
+
+		url, err := url.ParseRequestURI(redirect)
+		if err != nil {
+			return NewErrorMessage(ErrInvalidRedirect)
+		}
+		if url.Scheme == "" {
+			return NewErrorMessage(ErrInvalidRedirect)
+
+		}
+		if url.Host == "" {
+			return NewErrorMessage(ErrInvalidRedirect)
+
+		}
+
+		client.RedirectUrl = redirect
+	}
+
+	// User
+	longOption = cli.HasOption("user", options)
+	shortOption = cli.HasOption("u", options)
+
+	if longOption || shortOption {
+
+		id := cli.GetOption("user", options)
+		if id == "" {
+			id = cli.GetOption("u", options)
+		}
+
+		tid, err := strconv.Atoi(id)
+		if err != nil {
+			color.Red("error: %v\n", "cannot convert user id to string")
+			return ""
+		}
+
+		usr, err := c.Models.Users.Get(tid)
+		if err != nil {
+			return NewErrorMessage(ErrUserNotFound)
+		}
+		client.UserID = &usr.ID
+	}
+
+	color.Green("Creating client...")
+
+	cid, secret, err := c.Models.Clients.Insert(client)
+	if err != nil {
+		color.Red("error: %v\n", err)
+		return ""
+	}
+
+	color.Green("Client stored in database...")
+	color.Green("Client creation complete!")
+	color.Yellow("Client Details:")
+	color.White("Name: %s\nID: %d\nSecret: %s\nType: %s", client.Name, cid, secret, client.Type)
+	if client.RedirectUrl != "" {
+		color.White("Redirect URL: %s", client.RedirectUrl)
+	}
+	if client.UserID != nil {
+		color.White("User ID: %s", client.UserID)
+	}
+
+	return ""
+}
