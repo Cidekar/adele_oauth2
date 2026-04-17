@@ -71,6 +71,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b release/${{ steps.version.outputs.VERSION }}
+          git commit --allow-empty -m "chore: release ${{ steps.version.outputs.VERSION }}"
           git push origin release/${{ steps.version.outputs.VERSION }}
 
       - name: sync with base branch
