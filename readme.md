@@ -30,10 +30,11 @@ import (
 
 The ServiceProvider automatically registers:
 
+- `GET /oauth/authorize` — authorization request (renders consent)
+- `POST /oauth/authorize` — authorization grant exchange
 - `POST /oauth/token` — token exchange
 - `POST /oauth/token/refresh` — refresh token exchange
-
-For authorization code flows, scaffold the consent UI handlers into your app. See the full documentation for details.
+- `GET /api/ping` — test endpoint for bearer middleware validation
 
 Optional provider configuration:
 

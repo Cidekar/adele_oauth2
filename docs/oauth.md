@@ -119,12 +119,12 @@ To configure the provider programmatically use `SetProviderConfig` with a `map[s
 
 ## Clients
 
-Clients are registered in the `oauth_clients` database table. You may create clients programmatically using `InsertClient`:
+Clients are registered in the `oauth_clients` database table. You may create clients programmatically using `InsertClient`. The `Service` is accessed through the provider — `New` is called internally by the `ServiceProvider` and is not intended to be called by consumers directly. Obtain a `*api.Service` from the provider via `oauth.Provider().Service()`:
 
 ```go
-svc := oauth.New(adeleApp)
+svc := oauth.Provider().Service()
 
-client, err := svc.InsertClient(oauth.Client{
+client, err := svc.InsertClient(api.Client{
     Name:        "My Application",
     Secret:      "a-strong-random-secret",
     Type:        "authorization_code",
@@ -288,6 +288,10 @@ grant_type=refresh_token&client_id=1&client_secret=secret&refresh_token=REFRESH_
 ```
 
 The old access token and refresh token are invalidated and deleted on a successful exchange.
+
+### Test Endpoint
+
+The provider registers `GET /api/ping` as a test endpoint for bearer middleware validation. It returns `{"status": "pong"}` and is protected by the bearer token middleware when `/api` is in `GuardedRouteGroups`.
 
 ## Authorization Endpoints
 
