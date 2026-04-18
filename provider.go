@@ -105,6 +105,42 @@ func (p *ServiceProvider) Register(app interface{}) error {
 		json.NewEncoder(w).Encode(res)
 	})
 
+	a.Routes.Get("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
+		res, errRes := p.service.AuthorizationGrantExchange(w, r)
+		if errRes != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(errRes.ErrorCode)
+			json.NewEncoder(w).Encode(errRes)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(res)
+	})
+
+	a.Routes.Post("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
+		res, errRes := p.service.AuthorizationGrantExchangePost(w, r)
+		if errRes != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(errRes.ErrorCode)
+			json.NewEncoder(w).Encode(errRes)
+			return
+		}
+		if res == nil {
+			return // redirect already written by service
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(res)
+	})
+
+	// Test route for bearer middleware validation
+	a.Routes.Get("/api/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "pong"})
+	})
+
 	return nil
 }
 

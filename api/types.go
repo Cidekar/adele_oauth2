@@ -37,10 +37,10 @@ type Configuration struct {
 	Scopes                          Scopes            `yaml:"Scopes"`                          // scopes that the authorization server may assign to a oauth token request
 	UnguardedRoutes                 []string          `yaml:"UnguardedRoutes"`                 // paths that do not require authentication (relative paths may not omit leading slash)
 	GuardedRouteGroups              []string          `yaml:"GuardedRouteGroups"`              // paths that require authentication (relative paths may omit leading slash)
-	AuthorizationTokenTTL           time.Duration     `yaml:"AuthorizationTokenTTL"`           // number of minutes the authorization token is valid
-	OauthTokenTTL                   time.Duration     `yaml:"OauthTokenTTL"`                   // number of hours a oauth token is valid
-	PkceImplicitTTL                 time.Duration     `yaml:"PkceImplicitTTL"`                 // number of minutes a pkce implicit token is valid
-	RefreshTokenTokenTTL            time.Duration     `yaml:"RefreshTokenTokenTTL"`            // number of hours a refresh token is valid
+	AuthorizationTokenTTL           time.Duration     `yaml:"AuthorizationTokenTTL"`           // duration the authorization token is valid (default: 60 minutes)
+	OauthTokenTTL                   time.Duration     `yaml:"OauthTokenTTL"`                   // duration a token is valid (default: 24 hours)
+	PkceImplicitTTL                 time.Duration     `yaml:"PkceImplicitTTL"`                 // duration a PKCE implicit token is valid (default: 300 seconds)
+	RefreshTokenTokenTTL            time.Duration     `yaml:"RefreshTokenTokenTTL"`            // duration a refresh token is valid (default: 24 hours)
 	VerifyTemplatePath              string            `yaml:"VerifyTemplatePath"`              // the path to the verify view template relative to the resources dir
 }
 

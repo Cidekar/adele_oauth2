@@ -50,6 +50,9 @@ func authErrorRedirect(w http.ResponseWriter, r *http.Request, redirectURI, stat
 	q := url.Values{}
 	q.Set("error", oauthErr.Error())
 	q.Set("state", state)
+	if desc, ok := Descriptions[oauthErr]; ok {
+		q.Set("error_description", desc)
+	}
 	http.Redirect(w, r, redirectURI+"?"+q.Encode(), http.StatusFound)
 }
 
@@ -265,11 +268,7 @@ func (o *Service) AuthorizationGrantExchange(w http.ResponseWriter, r *http.Requ
 	}
 
 	client, err := o.GetClient(cid)
-	if client == nil {
-		return nil, NewErrorResponse(ErrInvalidClient)
-	}
-
-	if err != nil {
+	if client == nil || err != nil || client.Revoked != 0 {
 		return nil, NewErrorResponse(ErrInvalidClient)
 	}
 
@@ -329,7 +328,7 @@ func (o *Service) AuthorizationGrantExchange(w http.ResponseWriter, r *http.Requ
 }
 
 // AuthorizationGrantExchangePost processes the authorization form submission.
-// Handles authorization_grant, authorization_grant_pkce, and authorization_grant_pkce_implicit flows.
+// Handles plain, pkce, and pkce_implicit authorization code flows.
 //
 // Example:
 //
@@ -397,11 +396,7 @@ func (o *Service) AuthorizationGrantExchangePost(w http.ResponseWriter, r *http.
 	}
 
 	client, err := o.GetClient(cid)
-	if client == nil {
-		return nil, NewErrorResponse(ErrInvalidClient)
-	}
-
-	if err != nil {
+	if client == nil || err != nil || client.Revoked != 0 {
 		return nil, NewErrorResponse(ErrInvalidClient)
 	}
 
@@ -457,8 +452,7 @@ func (o *Service) AuthorizationGrantExchangePost(w http.ResponseWriter, r *http.
 }
 
 // AccessTokenGrantExchange exchanges credentials for an access token.
-// Supports: client_credentials, authorization_grant_pkce, authorization_grant_pkce_implicit,
-// and resource_owner_password_credentials grant types.
+// Supports client_credentials, password, and authorization_code (PKCE code exchange) grant types.
 //
 // Example (client_credentials):
 //
@@ -514,15 +508,7 @@ func (o *Service) AccessTokenGrantExchange(w http.ResponseWriter, r *http.Reques
 		}
 
 		client, err := o.GetClient(cid)
-		if client == nil {
-			return nil, NewErrorResponse(ErrInvalidClient)
-		}
-
-		if err != nil {
-			return nil, NewErrorResponse(ErrInvalidClient)
-		}
-
-		if client.Revoked != 0 {
+		if client == nil || err != nil || client.Revoked != 0 {
 			return nil, NewErrorResponse(ErrInvalidClient)
 		}
 
@@ -538,7 +524,7 @@ func (o *Service) AccessTokenGrantExchange(w http.ResponseWriter, r *http.Reques
 		// 1. look up the authorization token by code in the db
 		authorizationToken, err := o.ConsumeAuthorizationToken(r.Form.Get("code"))
 		if err != nil {
-			return nil, NewErrorResponse(ErrInvalidClient)
+			return nil, NewErrorResponse(ErrInvalidGrant)
 		}
 
 		// 2. Validate client provided code challenge
@@ -563,7 +549,7 @@ func (o *Service) AccessTokenGrantExchange(w http.ResponseWriter, r *http.Reques
 			return nil, NewErrorResponse(ErrInvalidGrant)
 		}
 
-		// At this point we are good to issue access and refresh tokens for the client. If this request is for a authorization_grant_pkce_implicit client, only generate an access token, otherwise generate both an access and refresh token.
+		// At this point we are good to issue access and refresh tokens for the client. If this request is for a pkce_implicit client, only generate an access token, otherwise generate both an access and refresh token.
 
 		// access token
 		accessToken, err := o.GenerateOauthToken()
