@@ -26,6 +26,221 @@ For machine-to-machine authentication where no user is involved. The client auth
 
 For trusted first-party clients where the resource owner explicitly provides credentials to the client. This grant is appropriate only when other grant types are not viable. The client submits the user's username and password directly to the token endpoint. Use `grant_type: password`.
 
+## Flow Diagrams
+
+Each client type exchanges messages with the Adele OAuth2 server in a different shape. The diagrams below trace one successful request from start to finish. Error branches (invalid client, expired code, wrong scope) are omitted — they all terminate the flow with an RFC 6749 §5.2 error response.
+
+### Authorization Code (Flow: plain)
+
+Server-side web apps. The browser makes the authorization request; the app's backend does the code-for-token exchange with its secret.
+
+```
+ User         Browser              App Backend           Adele Server
+  │             │                      │                      │
+  │  click      │                      │                      │
+  │  "sign in"  │                      │                      │
+  ├────────────►│                      │                      │
+  │             │  GET /oauth/authorize?client_id&scope&...    │
+  │             ├─────────────────────────────────────────────►│
+  │             │                      │                      │ render consent
+  │             │◄─────────────────────────────────────────────┤ form (CSRF token)
+  │             │                      │                      │
+  │  enter      │                      │                      │
+  │  creds +    │                      │                      │
+  │  grant      │                      │                      │
+  ├────────────►│                      │                      │
+  │             │  POST /oauth/authorize  (form + CSRF)        │
+  │             ├─────────────────────────────────────────────►│
+  │             │                      │                      │ issue auth code,
+  │             │                      │                      │ 302 to redirect_uri
+  │             │◄─────────────────────────────────────────────┤
+  │             │  GET  redirect_uri?code=AUTH_CODE&state=...  │
+  │             ├─────────────────────►│                      │
+  │             │                      │                      │
+  │             │                      │  POST /oauth/token   │
+  │             │                      │  grant_type=authorization_code
+  │             │                      │  client_id + client_secret + code
+  │             │                      ├─────────────────────►│
+  │             │                      │                      │ consume code,
+  │             │                      │                      │ issue tokens
+  │             │                      │◄─────────────────────┤
+  │             │                      │  {access_token, refresh_token, ...}
+  │             │                      │                      │
+  │             │  session cookie,     │                      │
+  │             │  page rendered       │                      │
+  │             │◄─────────────────────┤                      │
+  │             │                      │                      │
+```
+
+### Authorization Code with PKCE (Flow: pkce)
+
+Single-page apps, mobile, native clients — no safe place for a client secret. The verifier/challenge pair replaces the secret at exchange time.
+
+```
+ User         Client App (SPA / mobile)                Adele Server
+  │                   │                                     │
+  │                   │  generate code_verifier (random)    │
+  │                   │  code_challenge = SHA256(verifier)  │
+  │                   │                                     │
+  │  tap "sign in"    │                                     │
+  ├──────────────────►│                                     │
+  │                   │  open system browser:               │
+  │                   │  GET /oauth/authorize?              │
+  │                   │      client_id&code_challenge&      │
+  │                   │      code_challenge_method=S256&... │
+  │                   ├────────────────────────────────────►│
+  │                   │                                     │ render consent,
+  │                   │◄────────────────────────────────────┤ CSRF token
+  │                   │                                     │
+  │  grant access     │                                     │
+  ├──────────────────►│                                     │
+  │                   │  POST /oauth/authorize (form+CSRF)  │
+  │                   ├────────────────────────────────────►│
+  │                   │                                     │ store code_challenge
+  │                   │                                     │ with auth code,
+  │                   │                                     │ 302 to redirect_uri
+  │                   │◄────────────────────────────────────┤
+  │                   │  redirect_uri?code=AUTH_CODE&state  │
+  │                   │                                     │
+  │                   │  POST /oauth/token                  │
+  │                   │  grant_type=authorization_code      │
+  │                   │  client_id + code + code_verifier   │
+  │                   │  (NO client_secret)                 │
+  │                   ├────────────────────────────────────►│
+  │                   │                                     │ verify SHA256(
+  │                   │                                     │   code_verifier
+  │                   │                                     │ ) == stored challenge
+  │                   │                                     │ consume code,
+  │                   │                                     │ issue tokens
+  │                   │◄────────────────────────────────────┤
+  │                   │  {access_token, refresh_token, ...} │
+  │                   │                                     │
+```
+
+### Authorization Code with PKCE Implicit (Flow: pkce_implicit)
+
+Browser widgets / embedded views that cannot host a full redirect-and-consent flow. The server returns the authorization code directly in the response body rather than redirecting, then the widget exchanges it immediately. Only scopes in `PkceImplicitAuthorizationScopes` are eligible. Access tokens are short-lived (default 300s) and no refresh token is issued.
+
+```
+ Widget / Embedded Client                        Adele Server
+        │                                             │
+        │  generate code_verifier                     │
+        │  code_challenge = SHA256(verifier)          │
+        │                                             │
+        │  POST /oauth/authorize                      │
+        │  client_id + code_challenge +               │
+        │  code_challenge_method=S256 +               │
+        │  scopes (must be allowlisted)               │
+        ├────────────────────────────────────────────►│
+        │                                             │ validate scopes
+        │                                             │ against
+        │                                             │ PkceImplicit
+        │                                             │ AuthorizationScopes
+        │                                             │ issue auth code
+        │◄────────────────────────────────────────────┤
+        │  {code: AUTH_CODE}   ← no redirect          │
+        │                                             │
+        │  POST /oauth/token                          │
+        │  grant_type=authorization_code              │
+        │  client_id + code + code_verifier           │
+        ├────────────────────────────────────────────►│
+        │                                             │ verify challenge,
+        │                                             │ consume code,
+        │                                             │ issue SHORT-LIVED
+        │                                             │ access token
+        │                                             │ (no refresh_token)
+        │◄────────────────────────────────────────────┤
+        │  {access_token, expires_in: 300, scope, ...}│
+        │                                             │
+        │  ... widget uses token for 5 min then       │
+        │  restarts the flow from the top ...         │
+```
+
+### Client Credentials
+
+Machine-to-machine — one backend service calling another. No user, no browser, no redirect. Just client ID + secret for app-level scopes.
+
+```
+ Backend Service                                  Adele Server
+        │                                             │
+        │  POST /oauth/token                          │
+        │  grant_type=client_credentials              │
+        │  client_id + client_secret                  │
+        │  scopes=...                                 │
+        │  (or HTTP Basic Auth header)                │
+        ├────────────────────────────────────────────►│
+        │                                             │ bcrypt-verify secret,
+        │                                             │ issue access token
+        │                                             │ (NO refresh token)
+        │◄────────────────────────────────────────────┤
+        │  {access_token, expires_in, scope, ...}     │
+        │                                             │
+        │  subsequent calls:                          │
+        │  GET /api/resource                          │
+        │  Authorization: Bearer <access_token>       │
+        ├────────────────────────────────────────────►│
+        │                                             │ middleware validates
+        │                                             │ token + scopes
+        │◄────────────────────────────────────────────┤
+        │  {resource data}                            │
+        │                                             │
+```
+
+### Password
+
+Trusted first-party clients only. The user hands their username and password to the client, which sends them directly to the token endpoint. Do not use this for third-party apps — there is no way to revoke the client's access to credentials once shared.
+
+```
+ User          First-Party Client            Adele Server
+  │                   │                            │
+  │  username +       │                            │
+  │  password         │                            │
+  ├──────────────────►│                            │
+  │                   │  POST /oauth/token         │
+  │                   │  grant_type=password       │
+  │                   │  client_id + client_secret │
+  │                   │  username + password       │
+  │                   │  scopes=...                │
+  │                   ├───────────────────────────►│
+  │                   │                            │ verify client secret,
+  │                   │                            │ verify user password,
+  │                   │                            │ issue tokens
+  │                   │◄───────────────────────────┤
+  │                   │  {access_token,            │
+  │                   │   refresh_token,           │
+  │                   │   expires_in, scope, ...}  │
+  │                   │                            │
+  │                   │  (client forgets the       │
+  │                   │   user's password; uses    │
+  │                   │   refresh_token to         │
+  │                   │   renew access tokens)     │
+  │                   │                            │
+```
+
+### Refresh (shared across flows that issue a refresh_token)
+
+Applies to Authorization Code (plain + pkce) and Password. Client Credentials and PKCE Implicit do not issue refresh tokens — re-run the original flow instead.
+
+```
+ Client                                         Adele Server
+    │                                                │
+    │  POST /oauth/token/refresh                     │
+    │  grant_type=refresh_token                      │
+    │  client_id + client_secret + refresh_token     │
+    │  scopes=...  (must be subset of original)      │
+    ├───────────────────────────────────────────────►│
+    │                                                │ verify refresh token
+    │                                                │ (SHA-256 lookup)
+    │                                                │ delete old access +
+    │                                                │ refresh tokens
+    │                                                │ issue NEW pair
+    │◄───────────────────────────────────────────────┤
+    │  {access_token, refresh_token, ...}            │
+    │                                                │
+```
+
+Old tokens are invalidated atomically at exchange time, so a leaked refresh token stops being usable the moment its owner refreshes.
+
 ## Installation
 
 Install the package:
